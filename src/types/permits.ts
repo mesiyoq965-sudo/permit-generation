@@ -41,3 +41,14 @@ interface Erc721PermitReward extends CommonFields {
 }
 
 export type PermitReward = Erc20PermitReward | Erc721PermitReward;
+
+export interface TransferResult {
+  tokenType: TokenType.ERC20;
+  tokenAddress: string;
+  beneficiary: string;
+  amount: string;
+  operatorFee: string;
+  networkId: number;
+  transactionHash: string;
+  sender: string;
+}

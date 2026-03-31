@@ -25,6 +25,9 @@ export const permitGenerationSettingsSchema = T.Object({
   evmNetworkId: T.Number(),
   evmPrivateEncrypted: T.String(),
   permitRequests: T.Array(permitRequestSchema),
+  transfer: T.Optional(T.Boolean()),
+  operatorFeePercent: T.Optional(T.Number()),
+  operatorFeeAddress: T.Optional(T.String()),
 });
 
 export type PermitGenerationSettings = StaticDecode<typeof permitGenerationSettingsSchema>;
