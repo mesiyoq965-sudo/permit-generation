@@ -25,6 +25,14 @@ export const permitGenerationSettingsSchema = T.Object({
   evmNetworkId: T.Number(),
   evmPrivateEncrypted: T.String(),
   permitRequests: T.Array(permitRequestSchema),
+  /**
+   * If true, automatically transfer funds to the beneficiary after generating the permit.
+   */
+  transfer: T.Optional(T.Boolean()),
+  /**
+   * Optional operator fee percentage (0-100) deducted from each transfer.
+   */
+  operatorFeePercent: T.Optional(T.Number()),
 });
 
 export type PermitGenerationSettings = StaticDecode<typeof permitGenerationSettingsSchema>;
