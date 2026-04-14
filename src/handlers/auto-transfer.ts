@@ -92,28 +92,95 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
     throw new Error(`Invalid operatorFeePercent: ${operatorFeePercent}. Must be between 0 and 100.`);
   }
 
-  // Get admin wallet
-  const provider = await getRpcProvider(config.evmNetworkId);
-  if (!provider) {
-    throw new Error("Failed to get RPC provider for auto-transfer");
+  // Get admin wallet — wrap setup in try/catch to return failed results instead of throwing
+  let provider: ethers.providers.JsonRpcProvider;
+  try {
+    provider = await getRpcProvider(config.evmNetworkId);
+    if (!provider) {
+      return permits.map(permit => ({
+        beneficiary: permit.beneficiary,
+        tokenAddress: permit.tokenAddress,
+        amount: permit.amount.toString(),
+        txHash: null,
+        networkId: permit.networkId,
+        operatorFee: "0",
+        gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+        status: "failed" as const,
+        error: "Failed to get RPC provider for auto-transfer",
+      }));
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return permits.map(permit => ({
+      beneficiary: permit.beneficiary,
+      tokenAddress: permit.tokenAddress,
+      amount: permit.amount.toString(),
+      txHash: null,
+      networkId: permit.networkId,
+      operatorFee: "0",
+      gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+      status: "failed" as const,
+      error: `Provider setup failed: ${msg}`,
+    }));
   }
 
-  const privateKeyDecrypted = await decrypt(config.evmPrivateEncrypted, String(process.env.X25519_PRIVATE_KEY));
-  const privateKeyParsed = parseDecryptedPrivateKey(privateKeyDecrypted);
-  const privateKey = privateKeyParsed.privateKey;
-  if (!privateKey) {
-    throw new Error("Private key is not defined for auto-transfer");
+  let adminWallet: ethers.Wallet;
+  try {
+    const privateKeyDecrypted = await decrypt(config.evmPrivateEncrypted, String(process.env.X25519_PRIVATE_KEY));
+    const privateKeyParsed = parseDecryptedPrivateKey(privateKeyDecrypted);
+    const privateKey = privateKeyParsed.privateKey;
+    if (!privateKey) {
+      return permits.map(permit => ({
+        beneficiary: permit.beneficiary,
+        tokenAddress: permit.tokenAddress,
+        amount: permit.amount.toString(),
+        txHash: null,
+        networkId: permit.networkId,
+        operatorFee: "0",
+        gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+        status: "failed" as const,
+        error: "Private key is not defined for auto-transfer",
+      }));
+    }
+    adminWallet = new ethers.Wallet(privateKey, provider);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return permits.map(permit => ({
+      beneficiary: permit.beneficiary,
+      tokenAddress: permit.tokenAddress,
+      amount: permit.amount.toString(),
+      txHash: null,
+      networkId: permit.networkId,
+      operatorFee: "0",
+      gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+      status: "failed" as const,
+      error: `Key setup failed: ${msg}`,
+    }));
   }
-
-  const adminWallet = new ethers.Wallet(privateKey, provider);
 
   for (const permit of permits) {
+    // Network consistency guard
+    if (permit.networkId !== config.evmNetworkId) {
+      results.push({
+        beneficiary: permit.beneficiary,
+        tokenAddress: permit.tokenAddress,
+        amount: permit.amount?.toString() ?? "0",
+        txHash: null,
+        networkId: permit.networkId,
+        operatorFee: "0",
+        gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+        status: "skipped",
+        error: `Network mismatch: permit is on ${permit.networkId}, config expects ${config.evmNetworkId}`,
+      });
+      continue;
+    }
+
     // Only auto-transfer ERC20 tokens
     if (permit.tokenType !== TokenType.ERC20) {
       results.push({
         beneficiary: permit.beneficiary,
         tokenAddress: permit.tokenAddress,
-        amount: permit.amount.toString(),
+        amount: permit.amount?.toString() ?? "0",
         txHash: null,
         networkId: permit.networkId,
         operatorFee: "0",
@@ -136,6 +203,22 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       const totalAmount = ethers.BigNumber.from(permit.amount);
       const operatorFee = totalAmount.mul(Math.round(operatorFeePercent * 100)).div(10000);
       const beneficiaryAmount = totalAmount.sub(operatorFee);
+
+      // Handle zero-amount beneficiary transfer (fee is 100%)
+      if (beneficiaryAmount.isZero()) {
+        results.push({
+          beneficiary: permit.beneficiary,
+          tokenAddress: permit.tokenAddress,
+          amount: "0",
+          txHash: null,
+          networkId: permit.networkId,
+          operatorFee: operatorFee.toString(),
+          gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+          status: "skipped",
+          error: "Beneficiary amount is zero after operator fee",
+        });
+        continue;
+      }
 
       // Estimate gas
       const gasEstimate = await estimateGas(provider, adminWallet.address, permit.beneficiary, permit.tokenAddress, beneficiaryAmount.toString());

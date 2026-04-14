@@ -32,7 +32,7 @@ export const permitGenerationSettingsSchema = T.Object({
   /**
    * Optional operator fee percentage (0-100) deducted from each transfer.
    */
-  operatorFeePercent: T.Optional(T.Number()),
+  operatorFeePercent: T.Optional(T.Number({ minimum: 0, maximum: 100 })),
 });
 
 export type PermitGenerationSettings = StaticDecode<typeof permitGenerationSettingsSchema>;
