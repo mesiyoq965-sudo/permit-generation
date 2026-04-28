@@ -159,7 +159,9 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
   }
 
   for (const permit of permits) {
-    // Network consistency guard
+    // Network consistency guard — each permit carries its own networkId,
+    // but execution network comes from config. Reject mismatch early to
+    // avoid signing on the wrong chain.
     if (permit.networkId !== config.evmNetworkId) {
       results.push({
         beneficiary: permit.beneficiary,
@@ -199,12 +201,15 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
     try {
       const erc20 = new ethers.Contract(permit.tokenAddress, ERC20_ABI, adminWallet);
 
-      // Calculate amounts
-      const totalAmount = ethers.BigNumber.from(permit.amount);
+      // Calculate amounts — use optional chaining because ERC721 permits
+      // may omit the amount field entirely.
+      const rawAmount = permit.amount ?? 0;
+      const totalAmount = ethers.BigNumber.from(rawAmount);
       const operatorFee = totalAmount.mul(Math.round(operatorFeePercent * 100)).div(10000);
       const beneficiaryAmount = totalAmount.sub(operatorFee);
 
-      // Handle zero-amount beneficiary transfer (fee is 100%)
+      // Handle zero-amount beneficiary transfer (fee is 100%) — some ERC20
+      // tokens revert on zero-value transfers, so we skip to avoid wasting gas.
       if (beneficiaryAmount.isZero()) {
         results.push({
           beneficiary: permit.beneficiary,
@@ -256,7 +261,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       results.push({
         beneficiary: permit.beneficiary,
         tokenAddress: permit.tokenAddress,
-        amount: permit.amount.toString(),
+        amount: permit.amount?.toString() ?? "0",
         txHash: null,
         networkId: permit.networkId,
         operatorFee: "0",
