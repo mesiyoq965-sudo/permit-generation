@@ -1,4 +1,4 @@
-import { EmitterWebhookEvent as WebhookEvent, EmitterWebhookEventName as WebhookEventName } from "@octokit/webhooks";
+﻿import { EmitterWebhookEvent as WebhookEvent, EmitterWebhookEventName as WebhookEventName } from "@octokit/webhooks";
 import { SupportedEvents } from "./context";
 import { StaticDecode, Type as T } from "@sinclair/typebox";
 
@@ -25,6 +25,14 @@ export const permitGenerationSettingsSchema = T.Object({
   evmNetworkId: T.Number(),
   evmPrivateEncrypted: T.String(),
   permitRequests: T.Array(permitRequestSchema),
+  /**
+   * If true, automatically transfer funds to the beneficiary after generating the permit.
+   */
+  transfer: T.Optional(T.Boolean()),
+  /**
+   * Optional operator fee percentage (0-100) deducted from each transfer.
+   */
+  operatorFeePercent: T.Optional(T.Number({ minimum: 0, maximum: 100 })),
 });
 
 export type PermitGenerationSettings = StaticDecode<typeof permitGenerationSettingsSchema>;

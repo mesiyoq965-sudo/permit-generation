@@ -1,10 +1,10 @@
-import * as github from "@actions/github";
+﻿import * as github from "@actions/github";
 import { Octokit } from "@octokit/rest";
 import { Value } from "@sinclair/typebox/value";
 import { createClient } from "@supabase/supabase-js";
 import { createAdapters } from "./adapters";
 import { Database } from "./adapters/supabase/types/database";
-import { generatePayoutPermit } from "./handlers";
+import { generatePayoutPermit, executeAutoTransfers } from "./handlers";
 import { registerWallet } from "./handlers/register-wallet";
 import { Context } from "./types/context";
 import { envSchema } from "./types/env";
@@ -62,8 +62,16 @@ export async function generatePermitsFromContext() {
     await handleSlashCommands(context, octokit);
   } else {
     const permits = await generatePayoutPermit(context, settings.permitRequests);
-    await returnDataToKernel(env.GITHUB_TOKEN, inputs.stateId, permits);
-    return JSON.stringify(permits);
+
+    // Execute auto-transfers if enabled in config
+    let transferResults = null;
+    if (settings.transfer) {
+      transferResults = await executeAutoTransfers(context, permits);
+    }
+
+    const output = { permits, transferResults };
+    await returnDataToKernel(env.GITHUB_TOKEN, inputs.stateId, output);
+    return JSON.stringify(output);
   }
 
   return null;
