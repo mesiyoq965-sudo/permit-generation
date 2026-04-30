@@ -14,6 +14,9 @@ const ERC20_ABI = [
 // Default gas limit estimate for ERC20 transfer
 const ERC20_TRANSFER_GAS_LIMIT = 65000;
 
+// Transaction confirmation timeout in milliseconds
+const TX_CONFIRM_TIMEOUT_MS = 120000;
+
 export interface TransferResult {
   beneficiary: string;
   tokenAddress: string;
@@ -71,6 +74,29 @@ export async function estimateGas(
     estimatedCost: estimatedCost.toString(),
     networkId: network.chainId,
   };
+}
+
+/**
+ * Waits for transaction confirmation with a timeout.
+ */
+async function waitForConfirmation(tx: ethers.ContractTransaction, timeoutMs: number): Promise<ethers.providers.TransactionReceipt> {
+  return Promise.race([
+    tx.wait(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Transaction confirmation timeout")), timeoutMs)
+    ),
+  ]);
+}
+
+/**
+ * Formats a token amount for logging, handling tokens that don't expose decimals().
+ */
+function formatTokenAmount(amount: ethers.BigNumber, erc20: ethers.Contract): Promise<string> {
+  return new Promise<string>((resolve) => {
+    erc20.decimals()
+      .then((decimals: number) => resolve(ethers.utils.formatUnits(amount, decimals)))
+      .catch(() => resolve(amount.toString()));
+  });
 }
 
 /**
@@ -228,10 +254,15 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       // Estimate gas
       const gasEstimate = await estimateGas(provider, adminWallet.address, permit.beneficiary, permit.tokenAddress, beneficiaryAmount.toString());
 
-      const tokenDecimals = await erc20.decimals();
+      // Format amounts for logging — use raw units if decimals() is unavailable
+      const [beneficiaryDisplayAmount, operatorFeeDisplayAmount] = await Promise.all([
+        formatTokenAmount(beneficiaryAmount, erc20),
+        formatTokenAmount(operatorFee, erc20),
+      ]);
+
       context.logger.info(
-        `Auto-transfer: ${ethers.utils.formatUnits(beneficiaryAmount, tokenDecimals)} tokens to ${permit.beneficiary}, ` +
-          `operator fee: ${ethers.utils.formatUnits(operatorFee, tokenDecimals)}, ` +
+        `Auto-transfer: ${beneficiaryDisplayAmount} tokens to ${permit.beneficiary}, ` +
+          `operator fee: ${operatorFeeDisplayAmount}, ` +
           `estimated gas: ${ethers.utils.formatEther(gasEstimate.estimatedCost)} native token`
       );
 
@@ -242,8 +273,8 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
 
       context.logger.info(`Transfer tx submitted: ${transferTx.hash}`);
 
-      // Wait for confirmation
-      await transferTx.wait();
+      // Wait for confirmation with timeout
+      await waitForConfirmation(transferTx, TX_CONFIRM_TIMEOUT_MS);
 
       results.push({
         beneficiary: permit.beneficiary,
