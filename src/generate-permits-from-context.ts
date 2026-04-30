@@ -4,11 +4,12 @@ import { Value } from "@sinclair/typebox/value";
 import { createClient } from "@supabase/supabase-js";
 import { createAdapters } from "./adapters";
 import { Database } from "./adapters/supabase/types/database";
-import { generatePayoutPermit } from "./handlers";
+import { generatePayoutPermit, processAutomaticTransfers } from "./handlers";
 import { registerWallet } from "./handlers/register-wallet";
 import { Context } from "./types/context";
 import { envSchema } from "./types/env";
 import { permitGenerationSettingsSchema, PluginInputs } from "./types/plugin-input";
+import { PermitGenerationSettings } from "./types/plugin-input";
 
 /**
  * Generates all the permits based on the currently populated context.
@@ -36,7 +37,7 @@ export async function generatePermitsFromContext() {
     config: inputs.settings,
     octokit,
     env,
-    logger: {
+    loggers: {
       debug(message: unknown, ...optionalParams: unknown[]) {
         console.debug(message, ...optionalParams);
       },
@@ -62,6 +63,20 @@ export async function generatePermitsFromContext() {
     await handleSlashCommands(context, octokit);
   } else {
     const permits = await generatePayoutPermit(context, settings.permitRequests);
+    
+    // Process automatic transfers if enabled
+    const transferEnabled = (settings as any).transfer ?? false;
+    if (transferEnabled) {
+      context.loggers.info("Automatic transfer is enabled, processing transfers...");
+      try {
+        const transferSummary = await processAutomaticTransfers(context, permits);
+        context.loggers.info(`Transfer summary: ${JSON.stringify(transferSummary)}`);
+      } catch (error) {
+        context.loggers.error(`Automatic transfer failed: ${error}`);
+        // Don't fail the whole operation if transfer fails
+      }
+    }
+    
     await returnDataToKernel(env.GITHUB_TOKEN, inputs.stateId, permits);
     return JSON.stringify(permits);
   }
@@ -74,7 +89,7 @@ async function returnDataToKernel(repoToken: string, stateId: string, output: ob
   await octokit.rest.repos.createDispatchEvent({
     owner: github.context.repo.owner,
     repo: github.context.repo.repo,
-    event_type: "return_data_to_ubiquibot_kernel",
+    event_type: "return_data_to_ubiquity_os_kernel",
     client_payload: {
       state_id: stateId,
       output: JSON.stringify(output),
@@ -86,7 +101,7 @@ async function handleSlashCommands(context: Context, octokit: Octokit) {
   const payload = context.payload as Context<"issue_comment.created">["payload"];
   const body = payload.comment.body;
 
-  const registrationRegex = /\/wallet (0x[a-fA-F0-9]{40})/g;
+  const registrationRegex = /\/\wallet (0x[a-fA-F0-9]{40})/g;
   const matches = body.match(registrationRegex);
 
   if (matches) {
