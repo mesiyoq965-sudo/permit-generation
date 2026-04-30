@@ -21,10 +21,24 @@ export const permitRequestSchema = T.Object({
 
 export type PermitRequest = StaticDecode<typeof permitRequestSchema>;
 
+// Original settings schema
+export const permitGenerationSettingsSchemaBase = T.Object({
+  evmNetworkId: T.Number(),
+  evmPrivateEncrypted: T.String(),
+  permitRequests: T.Array(permitRequestSchema),
+});
+
+// Extended settings with transfer support
 export const permitGenerationSettingsSchema = T.Object({
   evmNetworkId: T.Number(),
   evmPrivateEncrypted: T.String(),
   permitRequests: T.Array(permitRequestSchema),
+  // Transfer settings - enable automatic transfers to beneficiaries
+  transfer: T.Optional(T.Boolean()),
+  // Operator fee percentage (e.g., 5 = 5% fee)
+  operatorFeePercent: T.Optional(T.Number()),
+  // Ubiquity Dollars address for operator fees
+  ubqAddress: T.Optional(T.String()),
 });
 
 export type PermitGenerationSettings = StaticDecode<typeof permitGenerationSettingsSchema>;
