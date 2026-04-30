@@ -21,14 +21,7 @@ export const permitRequestSchema = T.Object({
 
 export type PermitRequest = StaticDecode<typeof permitRequestSchema>;
 
-// Original settings schema
-export const permitGenerationSettingsSchemaBase = T.Object({
-  evmNetworkId: T.Number(),
-  evmPrivateEncrypted: T.String(),
-  permitRequests: T.Array(permitRequestSchema),
-});
-
-// Extended settings with transfer support
+// Settings schema with optional transfer fields
 export const permitGenerationSettingsSchema = T.Object({
   evmNetworkId: T.Number(),
   evmPrivateEncrypted: T.String(),
