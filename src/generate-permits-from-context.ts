@@ -69,7 +69,12 @@ export async function generatePermitsFromContext() {
       transferResults = await executeAutoTransfers(context, permits);
     }
 
-    const output = { permits, transferResults };
+    const permitsToReturn =
+      transferResults == null
+        ? permits
+        : permits.filter((_, index) => transferResults[index]?.status !== "success");
+
+    const output = { permits: permitsToReturn, transferResults };
     await returnDataToKernel(env.GITHUB_TOKEN, inputs.stateId, output);
     return JSON.stringify(output);
   }
