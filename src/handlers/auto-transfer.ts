@@ -89,7 +89,20 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
 
   const operatorFeePercent = config.operatorFeePercent ?? 0;
   if (operatorFeePercent < 0 || operatorFeePercent > 100) {
-    throw new Error(`Invalid operatorFeePercent: ${operatorFeePercent}. Must be between 0 and 100.`);
+    // Return failed results instead of throwing to maintain consistency
+    // with the error handling pattern used throughout the function
+    context.logger.error(`Invalid operatorFeePercent: ${operatorFeePercent}. Must be between 0 and 100.`);
+    return permits.map(permit => ({
+      beneficiary: permit.beneficiary,
+      tokenAddress: permit.tokenAddress,
+      amount: permit.amount?.toString() ?? "0",
+      txHash: null,
+      networkId: permit.networkId,
+      operatorFee: "0",
+      gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+      status: "failed" as const,
+      error: `Invalid operatorFeePercent: ${operatorFeePercent}. Must be between 0 and 100.`,
+    }));
   }
 
   // Get admin wallet — wrap setup in try/catch to return failed results instead of throwing
@@ -100,7 +113,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       return permits.map(permit => ({
         beneficiary: permit.beneficiary,
         tokenAddress: permit.tokenAddress,
-        amount: permit.amount.toString(),
+        amount: permit.amount?.toString() ?? "0",
         txHash: null,
         networkId: permit.networkId,
         operatorFee: "0",
@@ -114,7 +127,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
     return permits.map(permit => ({
       beneficiary: permit.beneficiary,
       tokenAddress: permit.tokenAddress,
-      amount: permit.amount.toString(),
+      amount: permit.amount?.toString() ?? "0",
       txHash: null,
       networkId: permit.networkId,
       operatorFee: "0",
@@ -133,7 +146,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       return permits.map(permit => ({
         beneficiary: permit.beneficiary,
         tokenAddress: permit.tokenAddress,
-        amount: permit.amount.toString(),
+        amount: permit.amount?.toString() ?? "0",
         txHash: null,
         networkId: permit.networkId,
         operatorFee: "0",
@@ -148,7 +161,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
     return permits.map(permit => ({
       beneficiary: permit.beneficiary,
       tokenAddress: permit.tokenAddress,
-      amount: permit.amount.toString(),
+      amount: permit.amount?.toString() ?? "0",
       txHash: null,
       networkId: permit.networkId,
       operatorFee: "0",
@@ -228,10 +241,18 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       // Estimate gas
       const gasEstimate = await estimateGas(provider, adminWallet.address, permit.beneficiary, permit.tokenAddress, beneficiaryAmount.toString());
 
-      const tokenDecimals = await erc20.decimals();
+      let beneficiaryDisplayAmount = beneficiaryAmount.toString();
+      let operatorFeeDisplayAmount = operatorFee.toString();
+      try {
+        const tokenDecimals = await erc20.decimals();
+        beneficiaryDisplayAmount = ethers.utils.formatUnits(beneficiaryAmount, tokenDecimals);
+        operatorFeeDisplayAmount = ethers.utils.formatUnits(operatorFee, tokenDecimals);
+      } catch {
+        context.logger.warn(`Token ${permit.tokenAddress} does not expose decimals(); logging raw units.`);
+      }
       context.logger.info(
-        `Auto-transfer: ${ethers.utils.formatUnits(beneficiaryAmount, tokenDecimals)} tokens to ${permit.beneficiary}, ` +
-          `operator fee: ${ethers.utils.formatUnits(operatorFee, tokenDecimals)}, ` +
+        `Auto-transfer: ${beneficiaryDisplayAmount} tokens to ${permit.beneficiary}, ` +
+          `operator fee: ${operatorFeeDisplayAmount}, ` +
           `estimated gas: ${ethers.utils.formatEther(gasEstimate.estimatedCost)} native token`
       );
 
