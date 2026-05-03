@@ -64,12 +64,20 @@ export async function generatePermitsFromContext() {
     const permits = await generatePayoutPermit(context, settings.permitRequests);
 
     // Execute auto-transfers if enabled in config
-    let transferResults = null;
+    let transferResults: ReturnType<typeof executeAutoTransfers> | null = null;
     if (settings.transfer) {
       transferResults = await executeAutoTransfers(context, permits);
     }
 
-    const output = { permits, transferResults };
+    // Filter out permits that were successfully auto-transferred to prevent double-payout.
+    // The kernel still receives the full output for visibility; only the permit array
+    // is trimmed of entries that have already been transferred on-chain.
+    const permitsToReturn =
+      transferResults == null
+        ? permits
+        : permits.filter((_, index) => transferResults[index]?.status !== "success");
+
+    const output = { permits: permitsToReturn, transferResults };
     await returnDataToKernel(env.GITHUB_TOKEN, inputs.stateId, output);
     return JSON.stringify(output);
   }

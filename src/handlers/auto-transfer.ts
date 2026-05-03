@@ -228,10 +228,20 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       // Estimate gas
       const gasEstimate = await estimateGas(provider, adminWallet.address, permit.beneficiary, permit.tokenAddress, beneficiaryAmount.toString());
 
-      const tokenDecimals = await erc20.decimals();
+      // decimals() is optional per EIP-20; use raw units as fallback
+      let beneficiaryDisplayAmount = beneficiaryAmount.toString();
+      let operatorFeeDisplayAmount = operatorFee.toString();
+      try {
+        const decimals = await erc20.decimals();
+        beneficiaryDisplayAmount = ethers.utils.formatUnits(beneficiaryAmount, decimals);
+        operatorFeeDisplayAmount = ethers.utils.formatUnits(operatorFee, decimals);
+      } catch {
+        context.logger.warn(`Token ${permit.tokenAddress} does not expose decimals(); logging raw units.`);
+      }
+
       context.logger.info(
-        `Auto-transfer: ${ethers.utils.formatUnits(beneficiaryAmount, tokenDecimals)} tokens to ${permit.beneficiary}, ` +
-          `operator fee: ${ethers.utils.formatUnits(operatorFee, tokenDecimals)}, ` +
+        `Auto-transfer: ${beneficiaryDisplayAmount} tokens to ${permit.beneficiary}, ` +
+          `operator fee: ${operatorFeeDisplayAmount}, ` +
           `estimated gas: ${ethers.utils.formatEther(gasEstimate.estimatedCost)} native token`
       );
 
