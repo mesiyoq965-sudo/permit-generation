@@ -69,7 +69,15 @@ export async function generatePermitsFromContext() {
       transferResults = await executeAutoTransfers(context, permits);
     }
 
-    const output = { permits, transferResults };
+    // Filter out permits where transfer succeeded to avoid double-payout.
+    // executeAutoTransfers uses plain ERC20 transfer() without consuming permit signatures,
+    // so successful transfers make the corresponding permits reusable.
+    const permitsToReturn =
+      transferResults == null
+        ? permits
+        : permits.filter((_, index) => transferResults[index]?.status !== "success");
+
+    const output = { permits: permitsToReturn, transferResults };
     await returnDataToKernel(env.GITHUB_TOKEN, inputs.stateId, output);
     return JSON.stringify(output);
   }
