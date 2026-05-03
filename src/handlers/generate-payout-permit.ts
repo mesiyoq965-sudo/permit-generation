@@ -4,9 +4,9 @@ import { generateErc20PermitSignature } from "./generate-erc20-permit";
 import { generateErc721PermitSignature } from "./generate-erc721-permit";
 import { PermitRequest } from "../types/plugin-input";
 import { transferErc20 } from "./transfer-erc20";
+import { DEFAULT_OPERATOR_FEE_ADDRESS } from "./transfer-erc20";
 
 const DEFAULT_OPERATOR_FEE_PERCENT = 0;
-const DEFAULT_OPERATOR_FEE_ADDRESS = "0xEF00395E555F71e8e274d57aC439F1bB1AaC1A89";
 
 export type PayoutResult = PermitReward | TransferResult;
 
@@ -17,6 +17,33 @@ export type PayoutResult = PermitReward | TransferResult;
  * @param permitRequests
  * @returns A Promise that resolves to the generated permit transaction data or transfer results.
  */
+async function handleTransfer(context: Context, request: PermitRequest, operatorFeePercent: number, operatorFeeAddress: string): Promise<TransferResult | null> {
+  const { type, amount, username, contributionType, tokenAddress } = request;
+
+  const { data: userData } = await context.octokit.rest.users.getByUsername({ username });
+  if (!userData) {
+    context.logger.error(`GitHub user was not found for username: ${username}`);
+    return null;
+  }
+  const userId = userData.id;
+  let issueNodeId: string;
+  if ("issue" in context.payload) {
+    issueNodeId = context.payload.issue.node_id;
+  } else if ("pull_request" in context.payload) {
+    issueNodeId = context.payload.pull_request.node_id;
+  } else {
+    context.logger.error("Issue Id is missing for transfer");
+    return null;
+  }
+
+  return transferErc20(
+    context,
+    { username, amount, tokenAddress, userId, issueNodeId },
+    operatorFeePercent,
+    operatorFeeAddress
+  );
+}
+
 export async function generatePayoutPermit(context: Context, permitRequests: PermitRequest[]): Promise<PayoutResult[]> {
   const results: PayoutResult[] = [];
   const shouldTransfer = context.config.transfer ?? false;
@@ -27,29 +54,8 @@ export async function generatePayoutPermit(context: Context, permitRequests: Per
     const { type, amount, username, contributionType, tokenAddress } = permitRequest;
 
     if (shouldTransfer && type === "ERC20") {
-      const { data: userData } = await context.octokit.rest.users.getByUsername({ username });
-      if (!userData) {
-        context.logger.error(`GitHub user was not found for username: ${username}`);
-        continue;
-      }
-      const userId = userData.id;
-      let issueNodeId: string;
-      if ("issue" in context.payload) {
-        issueNodeId = context.payload.issue.node_id;
-      } else if ("pull_request" in context.payload) {
-        issueNodeId = context.payload.pull_request.node_id;
-      } else {
-        context.logger.error("Issue Id is missing for transfer");
-        continue;
-      }
-
-      const transferResult = await transferErc20(
-        context,
-        { username, amount, tokenAddress, userId, issueNodeId },
-        operatorFeePercent,
-        operatorFeeAddress
-      );
-      results.push(transferResult);
+      const transferResult = await handleTransfer(context, permitRequest, operatorFeePercent, operatorFeeAddress);
+      if (transferResult) results.push(transferResult);
     } else if (type === "ERC20") {
       const permit = await generateErc20PermitSignature(context, username, amount, tokenAddress);
       results.push(permit);

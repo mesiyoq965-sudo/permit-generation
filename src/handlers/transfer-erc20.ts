@@ -68,7 +68,12 @@ export async function transferErc20(
     throw error;
   }
 
-  const receipt = await transferTx.wait();
+  const receipt = await Promise.race([
+    transferTx.wait(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Transfer confirmation timeout (120s)")), 120_000)
+    ),
+  ]);
 
   logger.info(`Transfer confirmed in block ${receipt.blockNumber}, tx: ${receipt.transactionHash}`);
 
@@ -78,7 +83,12 @@ export async function transferErc20(
     operatorTransferTx = await tokenContract.transfer(operatorFeeAddress, operatorFee, {
       gasLimit: 100000,
     });
-    await operatorTransferTx.wait();
+    await Promise.race([
+      operatorTransferTx.wait(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Operator fee transfer confirmation timeout (120s)")), 120_000)
+      ),
+    ]);
   }
 
   const result: TransferResult = {
